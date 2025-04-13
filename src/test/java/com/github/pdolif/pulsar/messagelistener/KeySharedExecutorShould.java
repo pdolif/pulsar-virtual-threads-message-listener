@@ -1,5 +1,7 @@
 package com.github.pdolif.pulsar.messagelistener;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.pulsar.client.api.Message;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ public class KeySharedExecutorShould {
     private ExecutorServiceProvider executorServiceProviderMock;
     private ExecutorService virtualThreadExecutorService1;
     private ExecutorService virtualThreadExecutorService2;
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     public void setup() {
@@ -38,6 +41,7 @@ public class KeySharedExecutorShould {
         when(executorServiceProviderMock.createSingleThreadedExecutorService())
                 .thenReturn(virtualThreadExecutorService1)
                 .thenReturn(virtualThreadExecutorService2);
+        meterRegistry = new SimpleMeterRegistry();
     }
 
     @Test
@@ -49,12 +53,18 @@ public class KeySharedExecutorShould {
 
     @Test
     public void requireNonNullName() {
-        assertThrows(IllegalArgumentException.class, () -> new KeySharedExecutor((String) null, executorServiceProviderMock));
+        assertThrows(IllegalArgumentException.class, () ->
+                new KeySharedExecutor((String) null, executorServiceProviderMock));
+        assertThrows(IllegalArgumentException.class, () ->
+                new KeySharedExecutor((String) null, executorServiceProviderMock, Metrics.disabled()));
     }
 
     @Test
     public void requireNonNullExecutorServiceProvider() {
-        assertThrows(IllegalArgumentException.class, () -> new KeySharedExecutor(name, (ExecutorServiceProvider) null));
+        assertThrows(IllegalArgumentException.class, () ->
+                new KeySharedExecutor(name, (ExecutorServiceProvider) null));
+        assertThrows(IllegalArgumentException.class, () ->
+                new KeySharedExecutor(name, (ExecutorServiceProvider) null, Metrics.disabled()));
     }
 
     @Test
@@ -237,6 +247,93 @@ public class KeySharedExecutorShould {
         verify(virtualThreadExecutorService1).submit(messageListenerRunnable2);
     }
 
+    @Test
+    public void requireNonNullMetrics() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new KeySharedExecutor(name, executorServiceProviderMock, (Metrics) null));
+    }
+
+    @Test
+    public void provideExecutorServiceCountMetric() throws InterruptedException {
+        // given an executor with a meter registry
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock, Metrics.with(meterRegistry));
+        var delay = 200;
+
+        // when executing two message listener runnables with the same ordering key
+        keySharedExecutor.execute(messageWith(orderingKey1), sleep(delay));
+        keySharedExecutor.execute(messageWith(orderingKey1), sleep(delay));
+
+        // then the number of executor services used by the key shared executor is 1
+        assertThatExecutorServiceCountMetricIs(meterRegistry, name, 1);
+
+        // when executing message listener runnables with two additional ordering keys
+        keySharedExecutor.execute(messageWith(orderingKey2), sleep(delay));
+        keySharedExecutor.execute(messageWith(new OrderingKey("key3".getBytes())), sleep(delay));
+
+        // then the number of executor services used by the key shared executor is 3
+        assertThatExecutorServiceCountMetricIs(meterRegistry, name, 3);
+
+        // when waiting for the runnables to complete
+        Thread.sleep(delay * 2 + 50);
+
+        // then the number of executor services used by the key shared executor is 0 again
+        assertThatExecutorServiceCountMetricIs(meterRegistry, name, 0);
+    }
+
+    @Test
+    public void provideExecutorServiceCountMetricForMultipleExecutors() {
+        // given two executors that use the same meter registry
+        var metrics = Metrics.with(meterRegistry);
+        var executorName1 = "executor1";
+        var executorName2 = "executor2";
+        var executor1 = new KeySharedExecutor(executorName1, executorServiceProviderMock, metrics);
+        var executor2 = new KeySharedExecutor(executorName2, executorServiceProviderMock, metrics);
+
+        // when executing message listener runnables with both executors
+        executor1.execute(messageWith(orderingKey1), sleep(100));
+        executor2.execute(messageWith(orderingKey1), sleep(100));
+
+        // then the number of executor services used by each executor is 1
+        assertThatExecutorServiceCountMetricIs(meterRegistry, executorName1, 1);
+        assertThatExecutorServiceCountMetricIs(meterRegistry, executorName2, 1);
+
+        executor1.close();
+        executor2.close();
+    }
+
+    @Test
+    public void provideQueuedMessagesCountMetric() throws InterruptedException {
+        // given two executors that use the same meter registry
+        var metrics = Metrics.with(meterRegistry);
+        var executorName1 = "executor1";
+        var executorName2 = "executor2";
+        var executor1 = new KeySharedExecutor(executorName1, executorServiceProviderMock, metrics);
+        var executor2 = new KeySharedExecutor(executorName2, executorServiceProviderMock, metrics);
+        var delay = 200;
+
+        // when executing 3 message listener runnables with the same ordering key using the first executor
+        executor1.execute(messageWith(orderingKey1), sleep(delay));
+        executor1.execute(messageWith(orderingKey1), sleep(delay));
+        executor1.execute(messageWith(orderingKey1), sleep(delay));
+        // and executing 2 message listener runnables with different ordering keys using the second executor
+        executor2.execute(messageWith(orderingKey1), sleep(delay));
+        executor2.execute(messageWith(orderingKey2), sleep(delay));
+
+        // then the metric reflects the number of queued messages for each executor
+        assertThatQueuedMessagesMetricIs(meterRegistry, executorName1, 3);
+        assertThatQueuedMessagesMetricIs(meterRegistry, executorName2, 2);
+
+        // when waiting for the runnables to complete
+        Thread.sleep(delay * 3 + 50);
+
+        // then the metric is 0 for each executor
+        assertThatQueuedMessagesMetricIs(meterRegistry, executorName1, 0);
+        assertThatQueuedMessagesMetricIs(meterRegistry, executorName2, 0);
+
+        executor1.close();
+        executor2.close();
+    }
+
     private ExecutorService createVirtualThreadExecutorService() {
         return Executors.newSingleThreadExecutor(r -> Thread.ofVirtual().factory().newThread(r));
     }
@@ -266,6 +363,22 @@ public class KeySharedExecutorShould {
                 throw new RuntimeException(e);
             }
         };
+    }
+
+    private void assertThatExecutorServiceCountMetricIs(MeterRegistry registry, String executorName, double expectedValue) {
+        var value = registry.get("key.shared.executor.executor.service.count")
+                .tags("executorName", executorName)
+                .gauge()
+                .value();
+        assertThat(value).isEqualTo(expectedValue);
+    }
+
+    private void assertThatQueuedMessagesMetricIs(MeterRegistry registry, String executorName, double expectedValue) {
+        var value = registry.get("key.shared.executor.queued.messages.count")
+                .tags("executorName", executorName)
+                .gauge()
+                .value();
+        assertThat(value).isEqualTo(expectedValue);
     }
 
 }

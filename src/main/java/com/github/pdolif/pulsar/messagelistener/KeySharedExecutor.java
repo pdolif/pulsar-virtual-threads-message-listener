@@ -22,11 +22,23 @@ public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public KeySharedExecutor(String name, ExecutorServiceProvider executorServiceProvider) {
+    public KeySharedExecutor(String name, ExecutorServiceProvider executorServiceProvider, Metrics metrics) {
         if (name == null) throw new IllegalArgumentException("Name cannot be null");
         if (executorServiceProvider == null) throw new IllegalArgumentException("ExecutorServiceProvider cannot be null");
+        if (metrics == null) throw new IllegalArgumentException("Metrics cannot be null");
         this.name = name;
         this.executorServiceProvider = executorServiceProvider;
+
+        metrics.registerGaugeForMap("key.shared.executor.queued.messages.count", queuedMessagesCountPerKey,
+                map -> map.values().stream().mapToInt(Integer::intValue).sum(),
+                "Number of queued messages for the key shared executor", "executorName", name);
+
+        metrics.registerGaugeForMap("key.shared.executor.executor.service.count", executorPerKey,
+                "Number of executor services used by the key shared executor", "executorName", name);
+    }
+
+    public KeySharedExecutor(String name, ExecutorServiceProvider executorServiceProvider) {
+        this(name, executorServiceProvider, Metrics.disabled());
     }
 
     @Override
