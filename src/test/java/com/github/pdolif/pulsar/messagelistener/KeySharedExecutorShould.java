@@ -3,6 +3,7 @@ package com.github.pdolif.pulsar.messagelistener;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.pulsar.client.api.Message;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -42,6 +43,11 @@ public class KeySharedExecutorShould {
                 .thenReturn(virtualThreadExecutorService1)
                 .thenReturn(virtualThreadExecutorService2);
         meterRegistry = new SimpleMeterRegistry();
+    }
+
+    @AfterEach
+    public void close() {
+        if (keySharedExecutor != null) keySharedExecutor.close();
     }
 
     @Test

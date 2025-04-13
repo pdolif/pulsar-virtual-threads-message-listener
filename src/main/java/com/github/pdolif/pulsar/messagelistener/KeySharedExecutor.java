@@ -5,7 +5,6 @@ import org.apache.pulsar.client.api.MessageListenerExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,7 +16,7 @@ public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable
     private final String name;
     private final ExecutorServiceProvider executorServiceProvider;
 
-    private final HashMap<OrderingKey, ExecutorService> executorPerKey = new HashMap<>();
+    private final ConcurrentHashMap<OrderingKey, ExecutorService> executorPerKey = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<OrderingKey, Integer> queuedMessagesCountPerKey = new ConcurrentHashMap<>();
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
