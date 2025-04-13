@@ -9,6 +9,24 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * An executor that runs {@link org.apache.pulsar.client.api.MessageListener} tasks based on the ordering keys of the
+ * messages. It ensures that {@link org.apache.pulsar.client.api.MessageListener} tasks for messages with the same
+ * ordering key are executed in order.
+ * <p>
+ * This implementation uses a given {@link ExecutorServiceProvider}.
+ * This provider must provide single-threaded executor services, otherwise ordering cannot be guaranteed.
+ * <p>
+ * If a message listener task is submitted for a given ordering key, an {@link ExecutorService} is created for that
+ * ordering key using the {@link ExecutorServiceProvider}.
+ * The message listener task is then submitted to the executor for that ordering key.
+ * If more message listener tasks are submitted for the same ordering key, they are submitted to the same executor service.
+ * If no tasks are queued for a given ordering key, and the last task is processed, the executor service gets shut down.
+ * For new tasks for the same ordering key, a new executor service will be created.
+ * <p>
+ * A {@link Metrics} instance can be provided to monitor the total number of queued messages and the number of executor
+ * services currently in use by the KeySharedExecutor.
+ */
 public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(KeySharedExecutor.class);
@@ -21,6 +39,12 @@ public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    /**
+     * Creates a new KeySharedExecutor with the given name, {@link ExecutorServiceProvider} and {@link Metrics}.
+     * @param name Name of the KeySharedExecutor used to identify it in metrics and logs
+     * @param executorServiceProvider Must provide single-threaded executor services, otherwise ordering cannot be guaranteed
+     * @param metrics Metrics instance to monitor the number of queued messages and the number of executor services
+     */
     public KeySharedExecutor(String name, ExecutorServiceProvider executorServiceProvider, Metrics metrics) {
         if (name == null) throw new IllegalArgumentException("Name cannot be null");
         if (executorServiceProvider == null) throw new IllegalArgumentException("ExecutorServiceProvider cannot be null");
@@ -36,6 +60,11 @@ public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable
                 "Number of executor services used by the key shared executor", "executorName", name);
     }
 
+    /**
+     * Creates a new KeySharedExecutor with the given name and {@link ExecutorServiceProvider}.
+     * @param name Name of the KeySharedExecutor used to identify it in logs
+     * @param executorServiceProvider Must provide single-threaded executor services, otherwise ordering cannot be guaranteed
+     */
     public KeySharedExecutor(String name, ExecutorServiceProvider executorServiceProvider) {
         this(name, executorServiceProvider, Metrics.disabled());
     }
