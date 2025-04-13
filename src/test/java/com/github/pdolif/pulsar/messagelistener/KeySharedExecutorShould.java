@@ -188,6 +188,39 @@ public class KeySharedExecutorShould {
         verify(executorServiceProviderMock, times(1)).createSingleThreadedExecutorService();
     }
 
+    @Test
+    public void closeUnused() {
+        var executor = new KeySharedExecutor(name, executorServiceProviderMock);
+        executor.close();
+    }
+
+    @Test
+    public void shutdownExecutorServicesOnClose() {
+        var keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+
+        keySharedExecutor.execute(messageWith(orderingKey1), sleep(1000));
+        keySharedExecutor.close();
+
+        verify(virtualThreadExecutorService1).shutdown();
+    }
+
+    @Test
+    public void allowMultipleCloseCalls() {
+        var executor = new KeySharedExecutor(name, executorServiceProviderMock);
+        executor.close();
+        executor.close();
+    }
+
+    @Test
+    public void throwExceptionWhenExecutingAfterClose() {
+        var keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+
+        keySharedExecutor.execute(messageWith(orderingKey1), sleep(1000));
+        keySharedExecutor.close();
+        assertThrows(IllegalStateException.class, () ->
+                keySharedExecutor.execute(messageWith(orderingKey1), sleep(1000)));
+    }
+
     private ExecutorService createVirtualThreadExecutorService() {
         return Executors.newSingleThreadExecutor(r -> Thread.ofVirtual().factory().newThread(r));
     }
@@ -203,6 +236,16 @@ public class KeySharedExecutorShould {
             try {
                 Thread.sleep(delay);
                 finishedRunnablesCounter.incrementAndGet();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        };
+    }
+
+    private Runnable sleep(int delay) {
+        return () -> {
+            try {
+                Thread.sleep(delay);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

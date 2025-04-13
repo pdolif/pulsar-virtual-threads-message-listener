@@ -8,8 +8,9 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public class KeySharedExecutor implements MessageListenerExecutor {
+public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(KeySharedExecutor.class);
 
@@ -18,6 +19,8 @@ public class KeySharedExecutor implements MessageListenerExecutor {
 
     private final HashMap<OrderingKey, ExecutorService> executorPerKey = new HashMap<>();
     private final ConcurrentHashMap<OrderingKey, Integer> queuedMessagesCountPerKey = new ConcurrentHashMap<>();
+
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public KeySharedExecutor(String name, ExecutorServiceProvider executorServiceProvider) {
         if (name == null) throw new IllegalArgumentException("Name cannot be null");
@@ -28,6 +31,9 @@ public class KeySharedExecutor implements MessageListenerExecutor {
 
     @Override
     public void execute(Message<?> message, Runnable runnable) {
+        if (closed.get()) {
+            throw new IllegalStateException("Cannot execute message listener task after executor is closed.");
+        }
         var orderingKey = new OrderingKey(message.getOrderingKey());
         executeOrdered(orderingKey, runnable);
     }
@@ -78,6 +84,13 @@ public class KeySharedExecutor implements MessageListenerExecutor {
     private void createExecutorIfNotExists(OrderingKey orderingKey) {
         executorPerKey.computeIfAbsent(orderingKey, key ->
                 executorServiceProvider.createSingleThreadedExecutorService());
+    }
+
+    @Override
+    public void close() {
+        if (closed.compareAndSet(false, true)) {
+            executorPerKey.values().forEach(ExecutorService::shutdown);
+        }
     }
 
     public String getName() {
