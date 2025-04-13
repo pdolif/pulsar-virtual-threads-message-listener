@@ -10,8 +10,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
@@ -19,17 +22,22 @@ public class KeySharedExecutorShould {
 
     private final String name = "executor1";
     private final OrderingKey orderingKey1 = new OrderingKey("key1".getBytes());
+    private final OrderingKey orderingKey2 = new OrderingKey("key2".getBytes());
     private final Runnable messageListenerRunnable1 = () -> {};
+    private final Runnable messageListenerRunnable2 = () -> {};
     private KeySharedExecutor keySharedExecutor;
     private ExecutorServiceProvider executorServiceProviderMock;
     private ExecutorService virtualThreadExecutorService1;
+    private ExecutorService virtualThreadExecutorService2;
 
     @BeforeEach
     public void setup() {
         executorServiceProviderMock = mock(ExecutorServiceProvider.class);
         virtualThreadExecutorService1 = spy(createVirtualThreadExecutorService());
+        virtualThreadExecutorService2 = spy(createVirtualThreadExecutorService());
         when(executorServiceProviderMock.createSingleThreadedExecutorService())
-                .thenReturn(virtualThreadExecutorService1);
+                .thenReturn(virtualThreadExecutorService1)
+                .thenReturn(virtualThreadExecutorService2);
     }
 
     @Test
@@ -81,6 +89,62 @@ public class KeySharedExecutorShould {
         verify(virtualThreadExecutorService1).submit(messageListenerRunnable1);
     }
 
+    @Test
+    public void executeRunnablesOfSameOrderingKeySequentially() {
+        // given an executor that uses a mocked executor service provider
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+        // given message listener runnables that sleep 100ms
+        var sleepDuration = 100;
+        AtomicInteger finishedRunnablesCounter = new AtomicInteger(0);
+        var runnable1 = sleep(sleepDuration, finishedRunnablesCounter);
+        var runnable2 = sleep(sleepDuration, finishedRunnablesCounter);
+
+        // when executing two message listener runnables (that sleep 100ms each) with the same ordering key
+        long startTime = System.currentTimeMillis();
+        keySharedExecutor.execute(messageWith(orderingKey1), runnable1);
+        keySharedExecutor.execute(messageWith(orderingKey1), runnable2);
+
+        await().pollInterval(10, MILLISECONDS).until(() -> finishedRunnablesCounter.get() == 2);
+        long endTime = System.currentTimeMillis();
+        // then the two message listener runnables are executed sequentially
+        assertThat(endTime - startTime).isGreaterThanOrEqualTo(sleepDuration * 2);
+    }
+
+    @Test
+    public void useDifferentExecutorServicesForRunnablesWithDifferentOrderingKeys() {
+        // given an executor that uses a mocked executor service provider
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+
+        // when executing two message listener runnables with different ordering keys
+        keySharedExecutor.execute(messageWith(orderingKey1), messageListenerRunnable1);
+        keySharedExecutor.execute(messageWith(orderingKey2), messageListenerRunnable2);
+
+        // then the runnables are submitted to different executor services
+        verify(virtualThreadExecutorService1, times(1)).submit(messageListenerRunnable1);
+        verify(virtualThreadExecutorService2, times(1)).submit(messageListenerRunnable2);
+    }
+
+    @Test
+    public void executeRunnablesOfDifferentOrderingKeysConcurrently() {
+        // given an executor that uses a mocked executor service provider
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+        // given message listener runnables that sleep 100ms
+        var sleepDuration = 100;
+        AtomicInteger finishedRunnablesCounter = new AtomicInteger(0);
+        var runnable1 = sleep(sleepDuration, finishedRunnablesCounter);
+        var runnable2 = sleep(sleepDuration, finishedRunnablesCounter);
+
+        // when executing two message listener runnables (that sleep 100ms each) with different ordering keys
+        long startTime = System.currentTimeMillis();
+        keySharedExecutor.execute(messageWith(orderingKey1), runnable1);
+        keySharedExecutor.execute(messageWith(orderingKey2), runnable2);
+
+        await().pollInterval(10, MILLISECONDS).until(() -> finishedRunnablesCounter.get() == 2);
+        long endTime = System.currentTimeMillis();
+        // then the two message listener runnables are executed concurrently
+        assertThat(endTime - startTime).isLessThan(sleepDuration * 2);
+    }
+
     private ExecutorService createVirtualThreadExecutorService() {
         return Executors.newSingleThreadExecutor(r -> Thread.ofVirtual().factory().newThread(r));
     }
@@ -89,6 +153,17 @@ public class KeySharedExecutorShould {
         var message = mock(Message.class);
         when(message.getOrderingKey()).thenReturn(orderingKey.key());
         return message;
+    }
+
+    private Runnable sleep(int delay, AtomicInteger finishedRunnablesCounter) {
+        return () -> {
+            try {
+                Thread.sleep(delay);
+                finishedRunnablesCounter.incrementAndGet();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        };
     }
 
 }
