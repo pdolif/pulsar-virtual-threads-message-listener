@@ -19,9 +19,17 @@
         <assertj.version>3.27.3</assertj.version>
         <mockito.version>5.17.0</mockito.version>
         <awaitility.version>4.3.0</awaitility.version>
+        <logback.version>1.5.18</logback.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.pulsar</groupId>
             <artifactId>pulsar-client</artifactId>

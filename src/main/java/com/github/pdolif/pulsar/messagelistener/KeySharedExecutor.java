@@ -43,6 +43,11 @@ public class KeySharedExecutor implements MessageListenerExecutor, AutoCloseable
             // get executor for this ordering key
             createExecutorIfNotExists(orderingKey);
             var executor = executorPerKey.get(orderingKey);
+            if (executor == null) {
+                log.error("[{}] Null ExecutorService provided for ordering key {}. Cannot execute message listener task.",
+                        name, orderingKey);
+                return queuedMessagesCount;
+            }
 
             // increment queued messages count for ordering key
             if (queuedMessagesCount == null) {

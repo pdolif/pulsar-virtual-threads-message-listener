@@ -221,6 +221,22 @@ public class KeySharedExecutorShould {
                 keySharedExecutor.execute(messageWith(orderingKey1), sleep(1000)));
     }
 
+    @Test
+    public void skipExecutionIfNullExecutorServiceProvided() {
+        // given an executor that uses a mocked executor service provider that provides a null executor service
+        when(executorServiceProviderMock.createSingleThreadedExecutorService())
+                .thenReturn(null)
+                .thenReturn(virtualThreadExecutorService1);
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+
+        // when executing two message listener runnables
+        keySharedExecutor.execute(messageWith(orderingKey1), messageListenerRunnable1);
+        keySharedExecutor.execute(messageWith(orderingKey2), messageListenerRunnable2);
+
+        // then the first runnable is skipped and the second one is executed
+        verify(virtualThreadExecutorService1).submit(messageListenerRunnable2);
+    }
+
     private ExecutorService createVirtualThreadExecutorService() {
         return Executors.newSingleThreadExecutor(r -> Thread.ofVirtual().factory().newThread(r));
     }
