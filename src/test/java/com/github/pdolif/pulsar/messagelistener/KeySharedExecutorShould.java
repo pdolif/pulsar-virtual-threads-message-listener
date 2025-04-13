@@ -145,6 +145,49 @@ public class KeySharedExecutorShould {
         assertThat(endTime - startTime).isLessThan(sleepDuration * 2);
     }
 
+    @Test
+    public void shutdownIdleExecutorServiceAfterTaskCompleted() throws Exception {
+        // given an executor that uses a mocked executor service provider
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+
+        // when executing a message listener runnable
+        keySharedExecutor.execute(messageWith(orderingKey1), messageListenerRunnable1);
+        // and waiting until it is completed
+        Thread.sleep(100);
+        // and executing another message listener runnable for the same ordering key
+        keySharedExecutor.execute(messageWith(orderingKey1), messageListenerRunnable2);
+
+        // then the executor service of the first runnable is shutdown after the first runnable is completed
+        // and the runnables are submitted to different executor services
+        verify(virtualThreadExecutorService1, times(1)).submit(messageListenerRunnable1);
+        verify(virtualThreadExecutorService2, times(1)).submit(messageListenerRunnable2);
+        verify(virtualThreadExecutorService1).shutdown();
+    }
+
+    @Test
+    public void reuseExecutorServiceForSameOrderingKeyUnderLoad() {
+        // given an executor that uses a mocked executor service provider
+        keySharedExecutor = new KeySharedExecutor(name, executorServiceProviderMock);
+
+        // when executing lots of message listener runnables so that the executor does not become idle in between
+        AtomicInteger finishedRunnablesCounter = new AtomicInteger(0);
+        new Thread(() -> {
+            for (int i = 0; i < 100; i++) {
+                keySharedExecutor.execute(messageWith(orderingKey1), sleep(2, finishedRunnablesCounter));
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }).start();
+
+        // then all message listener runnables are executed
+        await().pollInterval(10, MILLISECONDS).until(() -> finishedRunnablesCounter.get() == 100);
+        // and they are executed using only one executor service
+        verify(executorServiceProviderMock, times(1)).createSingleThreadedExecutorService();
+    }
+
     private ExecutorService createVirtualThreadExecutorService() {
         return Executors.newSingleThreadExecutor(r -> Thread.ofVirtual().factory().newThread(r));
     }
