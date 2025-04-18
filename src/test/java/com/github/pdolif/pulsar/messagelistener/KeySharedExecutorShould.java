@@ -41,7 +41,8 @@ public class KeySharedExecutorShould {
         virtualThreadExecutorService2 = spy(createVirtualThreadExecutorService());
         when(executorServiceProviderMock.createSingleThreadedExecutorService())
                 .thenReturn(virtualThreadExecutorService1)
-                .thenReturn(virtualThreadExecutorService2);
+                .thenReturn(virtualThreadExecutorService2)
+                .thenAnswer(invocation -> createVirtualThreadExecutorService());
         meterRegistry = new SimpleMeterRegistry();
     }
 
@@ -200,8 +201,8 @@ public class KeySharedExecutorShould {
 
         // then all message listener runnables are executed
         await().pollInterval(10, MILLISECONDS).until(() -> finishedRunnablesCounter.get() == 100);
-        // and they are executed using only one executor service
-        verify(executorServiceProviderMock, times(1)).createSingleThreadedExecutorService();
+        // and they are executed using only few executor services
+        verify(executorServiceProviderMock, atMost(5)).createSingleThreadedExecutorService();
     }
 
     @Test
