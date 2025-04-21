@@ -163,7 +163,7 @@ Messages were produced at a fixed rate and for each message an ordering key was 
 Each message contained the creation timestamp and a 10kb payload.
 
 The end to end time from message creation until the message is received by the HTTP endpoint (inclusive delay) was measured.
-Each test was executed for 120 seconds and a single instance of the consumer application was running.
+Each test was executed for 5 minutes and a single instance of the consumer application was running.
 The consumer application used one Pulsar consumer per topic.
 
 ### Environment
@@ -177,17 +177,17 @@ The consumer receiver queue size was set to 1000/default and a Key_Shared subscr
 
 ### E2E time p50/p90/p99 (100 topics, single partition, 100 ordering keys)
 
-| Producer Message Rate/<br/>Endpoint delay | 10ms                 | 100ms                      | 500ms                       |
-|-------------------------------------------|----------------------|----------------------------|-----------------------------|
-| 3 messages/s per topic                    | 12-13/13-14/13-14ms  | 102-103/103/103-104ms      | 502-503/503-504/504-670ms   |
-| 5 messages/s per topic                    | 12-13/12-14/13-14ms  | 102-103/102-104/103-104ms  | 502-503/502-504/512-804ms   |
-| 10 messages/s per topic                   | 11-13/12-13/12-14ms  | 101-103/102-103/103-104ms  | 501-503/502-504/802-903ms   |
-| 20 messages/s per topic                   | 11-12/12-13/12-14ms  | 101-103/102-103/115-153ms  | 501-503/504-553/903-1053ms  |
+| Producer Message Rate/<br/>Endpoint delay | 10ms                 | 100ms                      | 500ms                      |
+|-------------------------------------------|----------------------|----------------------------|----------------------------|
+| 3 messages/s per topic                    | 12-13/13-14/13-15ms  | 102-103/103/103-104ms      | 502-503/503-504/504-670ms  |
+| 5 messages/s per topic                    | 12-13/12-13/13-14ms  | 102-103/102-104/102-104ms  | 502-503/502-503/602-803ms  |
+| 10 messages/s per topic                   | 11-13/12-13/12-14ms  | 101-103/102-104/102-104ms  | 501-503/502-504/802-903ms  |
+| 20 messages/s per topic                   | 11-12/12-13/13-14ms  | 101-103/102-103/152-157ms  | 501-503/505-552/952-953ms  |
 
 
 ### E2E time p50/p90/p99 (500 topics, single partition, 100 ordering keys)
 
 | Producer Message Rate/<br/>Endpoint delay | 10ms                 | 100ms                      | 500ms                      |
 |-------------------------------------------|----------------------|----------------------------|----------------------------|
-| 3 messages/s per topic                    | 12/12-13/13-42ms     | 102/102-103/103-130ms      | 502/502-503/503-670ms      |
-| 5 messages/s per topic                    | 11-12/11-13/12-14ms  | 101-102/101-103/106-134ms  | 501-502/501-503/539-803ms  |
+| 3 messages/s per topic                    | 12/12-13/13-14ms     | 102/102-103/103-137ms      | 502/502-503/534-670ms      |
+| 5 messages/s per topic                    | 11-12/11-13/12-15ms  | 101-102/101-103/129-154ms  | 501-503/502-503/516-803ms  |
